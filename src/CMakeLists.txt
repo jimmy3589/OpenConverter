@@ -9,7 +9,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(USE_BMF_TRANSCODER "Use BMF Transcoder" ON)
+option(USE_BMF_TRANSCODER "Use BMF Transcoder" OFF)
+option(USE_FFTOOL_TRANSCODER "User FFmpeg Command Tool Transcoder" ON)
 
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
@@ -66,6 +67,19 @@ if (USE_BMF_TRANSCODER)
     list(APPEND SOURCES
         ${CMAKE_SOURCE_DIR}/transcoder/src/transcoder_bmf.cpp
     )
+elseif (USE_FFTOOL_TRANSCODER)
+    # Check if ffmpeg is available in the environment
+    find_program(FFMPEG_EXECUTABLE NAMES ffmpeg)
+    if(FFMPEG_EXECUTABLE)
+        message(STATUS "FFmpeg found at: ${FFMPEG_EXECUTABLE}")
+        list(APPEND SOURCES
+            ${CMAKE_SOURCE_DIR}/transcoder/src/transcoder_fftool.cpp
+        )
+        add_definitions(-DUSE_FFTOOL)  # Define a macro for FFmpeg Tool transcoder
+        add_definitions(-DFFTOOL_PATH="${FFMPEG_EXECUTABLE}")
+    else()
+        message(FATAL_ERROR "FFmpeg not found in the system PATH!")
+    endif()
 else()
     add_definitions(-DUSE_FFMPEG)  # Define a macro for FFmpeg transcoder
     list(APPEND SOURCES
@@ -106,6 +120,7 @@ set(HEADERS
     ${CMAKE_SOURCE_DIR}/transcoder/include/transcoder.h
     ${CMAKE_SOURCE_DIR}/transcoder/include/transcoder_bmf.h
     ${CMAKE_SOURCE_DIR}/transcoder/include/transcoder_ffmpeg.h
+    ${CMAKE_SOURCE_DIR}/transcoder/include/transcoder_fftool.h
 )
 
 # Add UI files
@@ -118,12 +133,6 @@ set(UI_FILES
 set(RESOURCE_FILES
     ${CMAKE_SOURCE_DIR}/resources/lang.qrc
 )
-
-# Handle MOC, UIC, and RCC (Qt build steps)
-# Automatically handle UI files using UIC
-#qt_wrap_ui(UI_HEADERS ${UI_FILES})
-# qt_add_resources(RESOURCE_OBJECTS ${RESOURCE_FILES})
-# qt_wrap_cpp(MOC_HEADERS ${HEADERS})
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(OpenConverter
