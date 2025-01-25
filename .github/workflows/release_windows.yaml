@@ -1,0 +1,107 @@
+name: Release Windows
+
+on:
+  release:
+    types:
+      - created
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    runs-on: windows-2019
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          git
+          make
+          pkg-config
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-wget
+          unzip
+
+    - name: Checkout BMF repository
+      run: |
+        git clone https://github.com/JackLau1222/bmf.git
+      shell: bash
+
+    - name: Cache FFmpeg
+      uses: actions/cache@v3
+      with:
+        path: ffmpeg-n4.4.4-94-g5d07afd482-win64-gpl-shared-4.4
+        key: ${{ runner.os }}-ffmpeg-4.4.4
+
+    - name: Setup FFmpeg
+      shell: bash
+      run: |
+        if [ ! -d "ffmpeg-n4.4.4-94-g5d07afd482-win64-gpl-shared-4.4" ]; then
+          wget https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2024-03-31-17-28/ffmpeg-n4.4.4-94-g5d07afd482-win64-gpl-shared-4.4.zip
+          unzip ffmpeg-n4.4.4-94-g5d07afd482-win64-gpl-shared-4.4.zip
+        fi
+        mkdir -p /usr/local
+        cp -r ffmpeg-n4.4.4-94-g5d07afd482-win64-gpl-shared-4.4/* /usr/local/
+
+    - name: Setup Python and Dependencies
+      run: |
+        python -m pip install timeout_decorator numpy onnxruntime pytest opencv-python
+      shell: bash
+
+    - name: Build BMF
+      shell: pwsh
+      run: |
+        $bashPath = "C:\msys64\usr\bin\bash.exe"
+        $bashCommand = @'
+        eval "$(./win_env/vcvarsall.sh x64)"
+        export INCLUDE="${INCLUDE};C:\\msys64\\usr\\local\\include"
+        ./build_win_lite.sh --msvc=2019 --preset=x64-Release bmf_ffmpeg
+        cmake --build build_win_lite/x64-Release --config Release --target ALL_BUILD
+        cp -r build_win_lite/x64-Release/output .
+        '@
+        echo $bashCommand | & $bashPath
+
+    - name: Set Environment Variables
+      shell: bash
+      run: |
+        echo "PYTHONHOME=$(dirname $(which python))" >> $GITHUB_ENV
+        echo "C_INCLUDE_PATH=$(pwd)/output/bmf/include" >> $GITHUB_ENV
+        echo "CPLUS_INCLUDE_PATH=$(pwd)/output/bmf/include" >> $GITHUB_ENV
+        echo "LIBRARY_PATH=$(pwd)/output/bmf/lib" >> $GITHUB_ENV
+        echo "PATH=$(pwd)/output/bmf/bin:$(pwd)/output/bmf/lib:$PATH" >> $GITHUB_ENV
+        echo "PYTHONPATH=$(pwd)/output/bmf/lib:$(pwd)/output" >> $GITHUB_ENV
+
+    - name: Create Package
+      shell: bash
+      run: |
+        mkdir -p OpenConverter_Windows_x64
+        cp -r src/build/* OpenConverter_Windows_x64/
+        7z a OpenConverter_Windows_x64.zip OpenConverter_Windows_x64/
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: OpenConverter_Windows_x64
+        path: OpenConverter_Windows_x64.zip
+
+    - name: Get Release Tag
+      id: release_info
+      run: echo "::set-output name=release_tag::$(echo ${GITHUB_REF#refs/tags/})"
+      shell: bash
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: OpenConverter_Windows_x64.zip
+
+    - name: Finish
+      run: echo "Windows release complete" 
